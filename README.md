@@ -115,6 +115,7 @@ zip에는 `run.bat`, `VERSION`, `tools\launcher.ps1`, `tools\apply_update.py`, `
    2. `scripts/ci_release.py`가 태그와 `VERSION`이 같은지 확인하고, zip을 빌드·검사합니다.
    3. `praycheck_v<버전>.zip`과 SHA256이 붙은 설명으로 Release를 등록하고 최신(latest)으로 표시합니다.
    - 진행 상황은 저장소의 **Actions** 탭에서 봅니다.
+   - 태그를 push했는데 실행 기록이 생기지 않으면(워크플로 파일과 태그를 한 번에 처음 올렸을 때 등) **Actions → release → Run workflow**에 태그(예: `v1.0.1`)를 넣어 수동으로 실행합니다. 그 태그의 코드로 빌드하며, 없는 태그면 멈춥니다.
 
 사용자 쪽 동작:
 - 앱을 켤 때 새 버전이 있으면 사이드바에 알림과 **업데이트** 버튼이 표시됩니다. 확인은 6시간에 한 번입니다.
