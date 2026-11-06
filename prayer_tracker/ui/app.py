@@ -83,6 +83,13 @@ FEEDBACK_CSS = """<style>
 .pc-done{border:1px solid #2e9d5b;border-left:6px solid #2e9d5b;border-radius:6px;padding:8px 12px;
          margin:4px 0 8px}
 .pc-done-title{color:#2e9d5b;font-weight:700}
+/* 사이드바 메뉴 버튼: 큰 글자, 넉넉한 높이, 왼쪽 정렬 */
+.st-key-pc_nav{gap:.4rem}
+.st-key-pc_nav button{min-height:3rem;justify-content:flex-start;padding:.4rem 1rem}
+.st-key-pc_nav button > div{justify-content:flex-start}
+.st-key-pc_nav button p{font-size:1.15rem;font-weight:500;text-align:left}
+.st-key-pc_nav button[kind="primary"] p{font-weight:700}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p{font-size:.95rem}
 </style>"""
 ET_KO = {EventType.START: "시작(START)", EventType.END: "종료(END)", EventType.OTHER: "인증 아님(OTHER)"}
 
@@ -199,10 +206,9 @@ def page_dashboard(svc):
 
 
 def go(page: str, **state) -> None:
-    """다른 페이지로 이동. 메뉴 radio의 key를 바꿔 새 위젯으로 만들어야 index가 반영된다."""
+    """다른 페이지로 이동(사이드바 메뉴 버튼의 강조도 따라 바뀐다)."""
     st.session_state.update(state)
     st.session_state["page"] = page
-    st.session_state["nav_rev"] = st.session_state.get("nav_rev", 0) + 1
     st.rerun()
 
 
@@ -903,13 +909,15 @@ def main():
     st.sidebar.title("기도 인증 현황")
     st.sidebar.caption(f"버전 {__version__}")
     update_sidebar()
-    # 라벨의 검토 건수가 바뀌면 Streamlit이 radio를 새 위젯으로 보고 첫 항목으로 초기화한다.
-    # 그래서 위젯 key 대신 별도 상태("page")에 현재 페이지를 보관하고 index로 복원한다.
-    keys = list(pages)
+    # 메뉴: 글자가 크고 누르기 쉬운 버튼(현재 페이지는 강조). 라벨(검토 건수)이 바뀌어도 key는 그대로다.
+    # on_click은 화면을 다시 그리기 전에 실행되므로, 누른 즉시 강조 표시도 맞게 나온다.
     cur = st.session_state.get("page", "dashboard")
-    key = st.sidebar.radio("메뉴", keys, index=keys.index(cur) if cur in keys else 0,
-                           format_func=lambda k: pages[k][0], key=f"nav_{st.session_state.get('nav_rev', 0)}")
+    key = cur if cur in pages else "dashboard"
     st.session_state["page"] = key
+    nav = st.sidebar.container(key="pc_nav")
+    for k, (label, _) in pages.items():
+        nav.button(label, key=f"nav|{k}", width="stretch", type="primary" if k == key else "secondary",
+                   on_click=st.session_state.__setitem__, args=("page", k))
     if st.session_state.get("last_page") != key:
         # 페이지를 옮기면 '처리 완료' 카드와 되돌리기 기록을 정리한다
         st.session_state["last_page"] = key
