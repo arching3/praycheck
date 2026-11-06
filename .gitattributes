@@ -1,0 +1,5 @@
+# Windows 실행 파일은 어떤 환경에서 받아도 CRLF 유지(.bat은 LF면 오동작, .ps1은 BOM+CRLF)
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.pdf binary
+*.png binary

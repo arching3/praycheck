@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && .venv/Scripts/python.exe scripts/release.py --hook",
+            "timeout": 180,
+            "statusMessage": "배포 zip 확인 중..."
+          }
+        ]
+      }
+    ]
+  }
+}

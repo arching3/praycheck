@@ -1,3 +1,32 @@
+# ===== 프로젝트 전용 =====
+# 개발 환경·캐시
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 개인정보: 실제 카카오톡 원본 대화(private/)와 앱 DB(data/)는 절대 커밋하지 않는다
+private/
+data/
+*.db
+# 루트에 실수로 둔 대화 내보내기 파일도 막는다
+/*.txt
+!/requirements.txt
+!/requirements-runtime.txt
+
+# 평가용 정답셋(실명·원문 포함)
+eval/goldset/
+
+# 생성물: 설명서 빌드 중간 산출물, 배포 zip, 휴대용 실행 환경, 앱 업데이트 작업 폴더
+docs/manual/build/
+dist/
+runtime/
+update/
+
+# Claude Code 개인 설정
+.claude/settings.local.json
+
+# ===== GitHub 기본 Python 템플릿 =====
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
