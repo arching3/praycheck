@@ -1,91 +1,92 @@
-"""GitHub Release용 파일 준비: 사용자 앱의 [업데이트]가 내려받을 zip과 릴리스 설명을 만든다.
+"""새 버전 공개 준비(로컬): 검사 후 버전 태그를 붙인다. Release 등록은 GitHub Actions가 한다.
 
 사용: python scripts/publish.py
-  1. 최신 배포 zip(dist/기도인증현황_v<버전>.zip)이 지금 소스와 일치하는지 확인(아니면 release.py 먼저)
-  2. 사용자 앱과 똑같은 방식으로 zip을 검사(필수 파일, 버전, 개인 데이터가 섞이지 않았는지)
-  3. dist/praycheck_v<버전>.zip(영문 이름 사본)과 dist/release_notes_v<버전>.md(SHA256 포함)를 만든다
-  4. 태그·push·Release 등록 방법을 출력한다(push와 Release 등록은 관리자가 직접)
+  1. 최신 배포 zip(dist/기도인증현황_v<버전>.zip)이 지금 소스와 일치하는지(아니면 release.py 먼저)
+  2. 그 zip을 사용자 앱과 같은 방식으로 검사(필수 파일, 버전, 개인 데이터 미포함)
+  3. 릴리스 설명 release_notes/v<버전>.md가 채워져 커밋되었는지(없으면 틀을 만들고 멈춤)
+  4. 커밋하지 않은 변경이 없는지
+  5. 주석 태그 v<버전>을 현재 커밋에 붙이고, 관리자가 할 push 명령을 출력한다
+태그가 push되면 .github/workflows/release.yml이 테스트 → zip 빌드·검사 → Release 등록을 한다.
 """
 from __future__ import annotations
 
-import hashlib
 import json
-import shutil
 import subprocess
 import sys
-import tempfile
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_dist import NAME  # noqa: E402
+from package_check import PLACEHOLDER, check_notes, check_package, notes_path  # noqa: E402
 from release import DIST, STATE, digest, fingerprint  # noqa: E402
 
 from prayer_tracker import updater  # noqa: E402
 
-FORBIDDEN_SUFFIX = (".db", ".db-journal", ".sqlite", ".sqlite3")
-FORBIDDEN_PARTS = {"private", "goldset", ".venv", "runtime", ".git"}
 
-
-def git(*args: str) -> str:
+def git(*args: str) -> tuple[int, str]:
     r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
-    return r.stdout.strip()
+    return r.returncode, (r.stdout + r.stderr).strip()
 
 
 def main() -> int:
     for s in (sys.stdout, sys.stderr):
         s.reconfigure(encoding="utf-8")
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    tag = f"v{version}"
+
     src = DIST / f"{NAME}_v{version}.zip"
     state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
     if not src.exists() or state.get("version") != version or state.get("digest") != digest(fingerprint()):
         print(f"배포 zip이 지금 소스와 맞지 않습니다. 먼저 scripts\\release.bat을 실행하세요. (VERSION {version})")
         return 1
-
-    with zipfile.ZipFile(src) as z:
-        bad = [n for n in z.namelist()
-               if n.lower().endswith(FORBIDDEN_SUFFIX) or FORBIDDEN_PARTS & set(Path(n).parts)]
-    if bad:
-        print("배포 zip에 들어가면 안 되는 파일이 있습니다:\n  " + "\n  ".join(bad))
+    try:
+        files = check_package(src, version)
+    except ValueError as e:
+        print(e)
         return 1
-    with tempfile.TemporaryDirectory() as tmp:
-        try:
-            files = updater.extract_package(src, Path(tmp) / "staging", version)
-        except updater.UpdateError as e:
-            print(f"배포 zip 검사 실패: {e}")
-            return 1
 
-    out = DIST / f"{updater.ASSET_PREFIX}{version}.zip"
-    shutil.copy2(src, out)
-    sha = hashlib.sha256(out.read_bytes()).hexdigest()
-    notes = DIST / f"release_notes_v{version}.md"
+    notes = notes_path(version)
     if not notes.exists():
-        notes.write_text("## 바뀐 점\n- (사용자가 알아야 할 변경 사항을 쉬운 말로 적어 주세요)\n\n"
-                         f"SHA256: {sha}\n", encoding="utf-8")
-    else:   # 설명은 그대로 두고 해시 줄만 최신으로
-        lines = [l for l in notes.read_text(encoding="utf-8").splitlines() if not l.upper().startswith("SHA256")]
-        notes.write_text("\n".join(lines).rstrip() + f"\n\nSHA256: {sha}\n", encoding="utf-8")
+        notes.parent.mkdir(exist_ok=True)
+        notes.write_text(f"## 바뀐 점\n- {PLACEHOLDER}을 쉬운 말로 적어 주세요)\n", encoding="utf-8")
+        print(f"릴리스 설명 틀을 만들었습니다: {notes.relative_to(ROOT)}\n내용을 채워 커밋한 뒤 다시 실행하세요.")
+        return 1
+    try:
+        check_notes(version)
+    except ValueError as e:
+        print(e)
+        return 1
 
-    tag = f"v{version}"
-    dirty = git("status", "--porcelain", "--untracked-files=no")
-    tagged = bool(git("tag", "--list", tag))
-    print(f"Release 파일 준비 완료 — v{version} (파일 {len(files)}개 검사 통과)")
-    print(f"  올릴 파일 : {out}")
-    print(f"  릴리스 설명: {notes}")
-    print(f"  SHA256    : {sha}")
-    if dirty:
-        print("\n[주의] 커밋하지 않은 변경이 있습니다. 커밋한 뒤 태그를 붙이세요.")
-    print("\n다음 순서로 공개하세요:")
-    step = 1
-    if not tagged:
-        print(f"  {step}. git tag {tag}")
-        step += 1
-    print(f"  {step}. git push origin main && git push origin {tag}")
-    print(f"  {step + 1}. https://github.com/{updater.REPO}/releases/new?tag={tag} 에서")
-    print(f"     제목 '{tag}', 설명은 위 릴리스 설명 파일 내용, 파일은 {out.name} 첨부 → Publish release")
-    print("     (Pre-release로 두면 사용자 앱이 보지 못합니다. 'Set as the latest release'를 켜 두세요)")
+    code, dirty = git("status", "--porcelain", "--untracked-files=no")
+    rel = notes.relative_to(ROOT).as_posix()
+    code2, tracked = git("ls-files", "--error-unmatch", rel)
+    if dirty or code2 != 0:
+        print("커밋하지 않은 변경이 있습니다(릴리스 설명 포함). 먼저 커밋하세요.")
+        print(dirty or f"?? {rel}")
+        return 1
+
+    _, head = git("rev-parse", "HEAD")
+    code, tagged = git("rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}")
+    if code == 0 and tagged != head:
+        print(f"태그 {tag}가 이미 다른 커밋({tagged[:7]})에 있습니다. VERSION을 올리거나 태그를 확인하세요.")
+        return 1
+    if code != 0:
+        code, out = git("tag", "-a", tag, "-m", f"기도 인증 현황 {tag}")
+        if code != 0:
+            print(f"태그를 만들지 못했습니다: {out}")
+            return 1
+        print(f"태그 {tag}를 만들었습니다 → {head[:7]}")
+    else:
+        print(f"태그 {tag}가 이미 현재 커밋에 있습니다.")
+
+    print(f"공개 준비 완료 — v{version} (배포 파일 {len(files)}개 검사 통과)")
+    print("\n관리자가 실행할 명령(이 push가 곧 사용자 공개입니다):")
+    print("  git push --follow-tags")
+    print(f"\npush 후 진행 상황: https://github.com/{updater.REPO}/actions")
+    print(f"완료되면 Release: https://github.com/{updater.REPO}/releases/tag/{tag}")
+    print("공개를 미루려면 'git push'만 하고(태그 제외) 나중에 'git push origin " + tag + "'.")
     return 0
 
 

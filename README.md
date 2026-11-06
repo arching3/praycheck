@@ -35,12 +35,16 @@ prayerchecker/
 │  └─ service.py              업로드·판정·수동 기록·재계산(UI가 쓰는 유일한 계층)
 ├─ tools/launcher.ps1         run.bat이 호출하는 실행기(배포에 포함)
 ├─ tools/apply_update.py      준비된 업데이트 적용기(launcher가 실행, 배포에 포함)
+├─ release_notes/             버전별 릴리스 설명(사용자 업데이트 화면에 표시)
+├─ .github/workflows/release.yml  태그 push → 테스트·빌드·Release 자동 등록
 ├─ tests/                     단위·통합 테스트(익명 fixture)
 ├─ eval/                      정답셋 대비 성능 평가(정답셋 goldset/은 커밋 금지)
 ├─ scripts/                   개발용 도구
 │  ├─ release.py / .bat       변경 감지 → 테스트 → 버전 올리기 → 배포 zip (훅이 자동 실행)
 │  ├─ build_dist.py           배포 zip 만들기
-│  ├─ publish.py              GitHub Release에 올릴 파일 준비·검사
+│  ├─ publish.py              공개 준비: 검사 후 버전 태그 붙이기
+│  ├─ ci_release.py           (GitHub Actions) 태그 → zip 빌드·검사·Release 설명
+│  ├─ package_check.py        배포 zip·릴리스 설명 검사(공용)
 │  ├─ split_chat_by_date.py   전체 대화를 날짜별 파일로 나누기(평가·열람용)
 │  └─ parsing.bat             위 분할 스크립트 실행
 ├─ docs/
@@ -94,17 +98,23 @@ py -3 -m venv .venv
 3. 통과하면 `VERSION`의 패치 번호를 올리고(1.0.0 → 1.0.1) `dist\기도인증현황_v<버전>.zip`을 만듭니다. 큰 변경은 `VERSION`을 직접 고치면 그 번호를 씁니다.
 4. 최근 zip 5개만 남기고, `dist\빌드기록.txt`에 버전·테스트 결과·바뀐 파일을 기록합니다.
 
-zip에는 `run.bat`, `VERSION`, `tools\launcher.ps1`, `requirements-runtime.txt`, 앱 소스, `사용방법.pdf`, `처음 읽어 주세요.txt`, 빈 `data` 폴더만 담습니다. 개인 데이터, 개발 환경, 테스트, 평가 정답셋은 넣지 않습니다. 앱 사이드바에 현재 버전이 표시됩니다. zip만 따로 만들려면 `scripts\build_dist.py <버전>`을 씁니다.
+zip에는 `run.bat`, `VERSION`, `tools\launcher.ps1`, `tools\apply_update.py`, `requirements-runtime.txt`, 앱 소스, `사용방법.pdf`, `처음 읽어 주세요.txt`, 빈 `data` 폴더만 담습니다. 개인 데이터, 개발 환경, 테스트, 평가 정답셋은 넣지 않습니다. 앱 사이드바에 현재 버전이 표시됩니다. zip만 따로 만들려면 `scripts\build_dist.py <버전>`을 씁니다.
 
 ### 사용자 앱 업데이트 (GitHub Release)
 사용자 앱의 **업데이트** 메뉴와 사이드바 알림은 `https://github.com/arching3/praycheck`의 최신 Release(`releases/latest`)를 봅니다. 저장소는 공개이며, 사용자 PC에는 git이나 로그인이 필요 없습니다.
 
-공개 순서(관리자):
-1. 변경을 커밋합니다. 배포 zip은 Stop 훅이 이미 만들어 둡니다.
-2. `.venv\Scripts\python scripts\publish.py`를 실행합니다. 배포 zip을 사용자 앱과 같은 방식으로 검사(필수 파일, 버전, 개인 데이터 미포함)하고 `dist\praycheck_v<버전>.zip`과 `dist\release_notes_v<버전>.md`(SHA256 포함)를 만든 뒤 다음 단계를 출력합니다.
-3. 릴리스 설명 파일의 "바뀐 점"을 쉬운 말로 채웁니다. 사용자가 업데이트 화면에서 그대로 읽습니다.
-4. `git tag v<버전>` → `git push origin main` → `git push origin v<버전>`
-5. GitHub의 **Releases → Draft a new release**에서 태그 선택 → 설명 붙여넣기 → `praycheck_v<버전>.zip` 첨부 → **Publish**(Pre-release 아님).
+공개 순서(Release 등록은 GitHub Actions가 자동으로 함):
+1. `release_notes/v<버전>.md`에 "바뀐 점"을 쉬운 말로 쓰고 변경과 함께 커밋합니다. 사용자가 업데이트 화면에서 그대로 읽습니다. 배포 zip은 Stop 훅이 이미 만들어 둡니다.
+2. `.venv\Scripts\python scripts\publish.py`를 실행합니다. 다음을 확인한 뒤 주석 태그 `v<버전>`을 붙입니다.
+   - 로컬 배포 zip이 지금 소스와 일치하는지, 사용자 앱과 같은 방식의 검사(필수 파일, 버전, 개인 데이터 미포함)를 통과하는지
+   - 릴리스 설명이 채워져 있는지
+   - 커밋하지 않은 변경이 없는지
+3. `git push --follow-tags`. **태그 push가 곧 사용자 공개입니다.** 공개를 미루려면 `git push`만 하고 나중에 `git push origin v<버전>`.
+4. `.github/workflows/release.yml`이 다음을 순서대로 합니다. 하나라도 실패하면 Release를 만들지 않습니다.
+   1. Windows에서 배포본과 같은 고정 버전으로 테스트합니다.
+   2. `scripts/ci_release.py`가 태그와 `VERSION`이 같은지 확인하고, zip을 빌드·검사합니다.
+   3. `praycheck_v<버전>.zip`과 SHA256이 붙은 설명으로 Release를 등록하고 최신(latest)으로 표시합니다.
+   - 진행 상황은 저장소의 **Actions** 탭에서 봅니다.
 
 사용자 쪽 동작:
 - 앱을 켤 때 새 버전이 있으면 사이드바에 알림과 **업데이트** 버튼이 표시됩니다. 확인은 6시간에 한 번입니다.

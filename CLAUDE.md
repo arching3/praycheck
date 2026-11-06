@@ -15,9 +15,13 @@
    - 훅이 테스트 실패를 돌려주면 zip이 만들어지지 않은 것이다. 원인을 고쳐 다시 통과시킨다.
    - zip을 손으로 만들거나 `VERSION`을 임의로 되돌리지 않는다. 큰 변경일 때만 사용자 요청에 따라 `VERSION`의 major/minor를 올린다.
    - 배포 대상에 새 파일을 추가하면 `scripts/build_dist.py`의 INCLUDE/RENAME과 `scripts/release.py`의 SHIPPED_FILES를 함께 고친다.
-5. **사용자에게 새 버전 공개(앱 [업데이트]가 받는 것)**: 관리자가 요청할 때만. 커밋 → `scripts/publish.py`(배포 zip 검사, `dist/praycheck_v<버전>.zip`과 릴리스 설명 생성) → 출력된 안내대로 **관리자가 직접** 태그 push와 GitHub Release 등록. push는 하지 않는다.
+5. **사용자에게 새 버전 공개(앱 [업데이트]가 받는 것)**: 관리자가 요청할 때만.
+   1. `release_notes/v<버전>.md`에 바뀐 점을 쉬운 말로 쓴다(사용자가 업데이트 화면에서 그대로 읽음).
+   2. 커밋 → `scripts/publish.py`(배포 zip 검사, 설명·커밋 상태 확인 후 주석 태그 `v<버전>` 생성).
+   3. 관리자에게 `git push --follow-tags`를 안내한다. **push는 하지 않는다**(관리자가 직접).
+   4. 태그가 push되면 `.github/workflows/release.yml`이 Windows에서 테스트 → `scripts/ci_release.py`(빌드·검사·SHA256) → Release 등록(latest)까지 자동으로 한다.
    - 원격: `git@github.com:arching3/praycheck.git`(**공개 저장소**). 커밋 전 실명·대화가 섞이지 않았는지 확인한다.
-   - 앱은 `releases/latest`만 본다(Pre-release는 무시). 릴리스 설명은 사용자가 그대로 읽으니 쉬운 말로 쓴다.
+   - 앱은 `releases/latest`만 본다. 태그 push가 곧 사용자 공개다.
 6. 화면이 바뀌어 설명서가 낡았으면 `docs/manual/capture.py` → `build_manual.py`로 `docs/사용방법.pdf`를 다시 만든다(Playwright 필요, 데모 데이터만 사용).
 
 ## 개인정보 (절대 규칙)
