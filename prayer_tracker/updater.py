@@ -26,6 +26,7 @@ from typing import Callable
 
 REPO = "arching3/praycheck"
 API_LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
+API_LIST = f"https://api.github.com/repos/{REPO}/releases?per_page=30"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases"
 ASSET_PREFIX = "praycheck_v"          # Release에 올리는 zip 이름(영문: GitHub가 한글 파일명을 바꿔 버림)
 USER_AGENT = "praycheck-updater"
@@ -103,10 +104,15 @@ def parse_release(data: dict) -> ReleaseInfo:
                        page_url=str(data.get("html_url") or RELEASES_PAGE))
 
 
-def fetch_latest(timeout: float = 5.0) -> ReleaseInfo:
+def strip_checksum(notes: str) -> str:
+    """사용자에게 보여 줄 릴리스 설명(검증용 SHA256 줄은 뺀다)."""
+    return "\n".join(l for l in (notes or "").splitlines() if not l.strip().upper().startswith("SHA256")).strip()
+
+
+def _fetch_json(url: str, timeout: float):
     try:
-        with _get(API_LATEST, timeout) as r:
-            data = json.loads(r.read().decode("utf-8"))
+        with _get(url, timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         if e.code == 404:
             raise UpdateError("아직 공개된 업데이트가 없습니다.") from e
@@ -117,7 +123,28 @@ def fetch_latest(timeout: float = 5.0) -> ReleaseInfo:
         raise UpdateError("업데이트를 확인하지 못했습니다. 인터넷 연결을 확인해 주세요.") from e
     except ValueError as e:
         raise UpdateError("업데이트 정보를 읽지 못했습니다.") from e
-    return parse_release(data)
+
+
+def fetch_latest(timeout: float = 5.0) -> ReleaseInfo:
+    return parse_release(_fetch_json(API_LATEST, timeout))
+
+
+def parse_changelog(data) -> list[dict]:
+    """Release 목록 → [{version, published_at, notes}] (새 버전부터). 초안·미리보기·형식이 다른 태그는 뺀다."""
+    out = []
+    for d in data if isinstance(data, list) else []:
+        if not isinstance(d, dict) or d.get("draft") or d.get("prerelease"):
+            continue
+        version = str(d.get("tag_name") or "").lstrip("vV")
+        if parse_version(version) is None:
+            continue
+        out.append({"version": version, "published_at": str(d.get("published_at") or "")[:10],
+                    "notes": strip_checksum(str(d.get("body") or ""))})
+    return sorted(out, key=lambda x: parse_version(x["version"]), reverse=True)
+
+
+def fetch_changelog(timeout: float = 5.0) -> list[dict]:
+    return parse_changelog(_fetch_json(API_LIST, timeout))
 
 
 def check_disabled() -> bool:

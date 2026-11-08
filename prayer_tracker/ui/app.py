@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import re
 import sys
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -810,7 +811,41 @@ def restart_notice(version: str) -> None:
                "`data\\backup` 폴더에 사본이 하나 더 저장됩니다.")
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def changelog() -> list[dict]:
+    return updater.fetch_changelog()   # 실패(예외)는 캐시하지 않으므로 인터넷이 돌아오면 다음에 다시 시도한다
+
+
+def changelog_section() -> None:
+    """버전별 바뀐 점(GitHub Release 설명 모음). 6시간 동안 다시 묻지 않는다."""
+    st.divider()
+    st.subheader("버전별 바뀐 점")
+    if updater.check_disabled():
+        st.caption("업데이트 확인이 꺼져 있어 표시하지 않습니다.")
+        return
+    try:
+        with st.spinner("불러오는 중..."):
+            items = changelog()
+    except updater.UpdateError as e:
+        st.caption(str(e))
+        return
+    if not items:
+        st.caption("아직 공개된 버전이 없습니다.")
+        return
+    for i, it in enumerate(items):
+        mark = " (사용 중)" if it["version"] == __version__ else ""
+        title = f"v{it['version']}{mark}" + (f" — {it['published_at']}" if it["published_at"] else "")
+        with st.expander(title, expanded=i == 0):
+            body = re.sub(r"^#+\s*바뀐 점\s*\n", "", it["notes"]).strip()   # 접는 칸 제목과 겹치는 머리말
+            st.markdown(body or "(설명 없음)")
+
+
 def page_update(svc):
+    update_status()
+    changelog_section()
+
+
+def update_status():
     root = ROOT
     st.write(f"현재 버전: **v{__version__}**")
     res = updater.last_result(root)
@@ -841,6 +876,7 @@ def page_update(svc):
             except updater.UpdateError as e:
                 st.session_state["update_latest"], st.session_state["update_error"] = None, str(e)
         latest_release.clear()
+        changelog.clear()
     latest, err = st.session_state.get("update_latest"), st.session_state.get("update_error")
     if err:
         st.warning(err)
@@ -848,8 +884,8 @@ def page_update(svc):
         st.subheader(f"새 버전 v{latest['version']}")
         if latest.get("published_at"):
             st.caption(f"공개: {latest['published_at'][:10]}")
-        notes = "\n".join(l for l in latest.get("notes", "").splitlines() if not l.strip().upper().startswith("SHA256"))
-        if notes.strip():
+        notes = updater.strip_checksum(latest.get("notes", ""))
+        if notes:
             with st.container(border=True):
                 st.markdown(notes)
         st.caption("[업데이트]를 누르면 새 버전을 내려받아 준비합니다. 실제 적용은 프로그램을 다시 실행할 때 됩니다. "

@@ -573,3 +573,34 @@ def test_extract_package_accepts_real_dist_zip(tmp_path):
     files = updater.extract_package(z, tmp_path / "st", ver)
     assert "VERSION" in files and "run.bat" in files
     assert not any(f.startswith("data/") for f in files)
+
+
+# ---- 버전별 바뀐 점(변경 내역) ----
+def test_strip_checksum_removes_sha_lines():
+    notes = "## 바뀐 점\n- 개선\n\nSHA256: " + "a" * 64 + "\n"
+    assert updater.strip_checksum(notes) == "## 바뀐 점\n- 개선"
+
+
+def test_parse_changelog_sorts_and_filters():
+    data = [
+        {"tag_name": "v1.0.2", "published_at": "2026-11-06T10:00:00Z", "body": "- 메뉴\nSHA256: " + "b" * 64},
+        {"tag_name": "v1.0.10", "published_at": "2026-12-01T00:00:00Z", "body": "- 열 번째"},
+        {"tag_name": "v1.1.0-beta", "body": "형식 다름"},
+        {"tag_name": "v1.2.0", "draft": True, "body": "초안"},
+        {"tag_name": "v1.3.0", "prerelease": True, "body": "미리보기"},
+        {"tag_name": "v1.0.1", "body": None},
+        "깨진 항목",
+    ]
+    out = updater.parse_changelog(data)
+    assert [x["version"] for x in out] == ["1.0.10", "1.0.2", "1.0.1"]
+    assert out[1] == {"version": "1.0.2", "published_at": "2026-11-06", "notes": "- 메뉴"}
+    assert out[2]["notes"] == "" and out[2]["published_at"] == ""
+    assert updater.parse_changelog({"message": "Not Found"}) == []
+
+
+def test_fetch_changelog_network_error_is_friendly(monkeypatch):
+    def boom(*a, **k):
+        raise urllib.error.URLError("offline")
+    monkeypatch.setattr(updater, "_get", boom)
+    with pytest.raises(UpdateError, match="인터넷"):
+        updater.fetch_changelog()
