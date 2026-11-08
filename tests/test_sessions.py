@@ -107,3 +107,57 @@ def test_manual_link_creates_complete_session():
     sessions, _, _ = run([a, b], links=[(a.id, b.id)])
     assert len(sessions) == 1 and sessions[0].manual
     assert sessions[0].duration_seconds == 1800
+
+
+# ---- 단독 "기도합니다": 같은 사람의 종료가 뒤따를 때만 시작으로 자동 확정 ----
+PRAY = "기도합니다"
+
+
+def test_pray_bare_with_following_end_is_complete_session():
+    sessions, reviews, updated = run([msg(PRAY, 26, 22, 14), msg(END, 26, 22, 51)])
+    assert len(sessions) == 1 and not reviews
+    assert sessions[0].status == SessionStatus.COMPLETE and sessions[0].duration_seconds == 37 * 60
+    assert updated
+
+
+def test_pray_bare_with_following_bare_end_is_complete_session():
+    sessions, reviews, _ = run([msg("기도 합니다!", 26, 21, 14), msg("마칩니다", 26, 21, 44)])
+    assert [s.status for s in sessions] == [SessionStatus.COMPLETE] and not reviews
+
+
+def test_pray_bare_ignores_chatter_between_start_and_end():
+    sessions, reviews, _ = run([msg(PRAY, 26, 22), msg("ㅋㅋㅋ 파이팅", 26, 22, 10), msg(END, 26, 22, 40)])
+    assert sessions[0].status == SessionStatus.COMPLETE and not reviews
+
+
+def test_pray_bare_without_end_goes_to_review():
+    # 기도 요청에 대한 답("기도합니다")일 수 있으므로 종료가 없으면 세션을 만들지 않는다
+    sessions, reviews, _ = run([msg(PRAY, 26, 22)], cov_end=dt(26, 23, 59))
+    assert sessions == []
+    assert [r.review_type for r in reviews] == [ReviewType.AMBIGUOUS]
+
+
+def test_pray_bare_followed_by_explicit_start_is_not_confirmed():
+    m1 = msg(PRAY, 26, 20)
+    sessions, reviews, _ = run([m1, msg(START, 26, 22), msg(END, 26, 22, 30)])
+    assert len(sessions) == 1 and sessions[0].start_at == dt(26, 22)
+    assert any(m1.id in r.message_ids for r in reviews)
+
+
+def test_pray_bare_end_too_late_is_not_confirmed():
+    sessions, reviews, _ = run([msg(PRAY, 26, 10), msg(END, 26, 17)])
+    assert sessions == []
+    assert reviews and reviews[0].review_type == ReviewType.MISSING_START
+
+
+def test_pray_bare_inside_open_session_is_not_a_new_start():
+    sessions, reviews, _ = run([msg(START, 26, 22), msg(PRAY, 26, 22, 10), msg(END, 26, 22, 40)])
+    assert len(sessions) == 1 and sessions[0].start_at == dt(26, 22)
+    assert sessions[0].status == SessionStatus.COMPLETE
+
+
+def test_pray_bare_not_confirmed_when_setting_off():
+    sessions, reviews, _ = run([msg(PRAY, 26, 22), msg(END, 26, 22, 30)],
+                               settings=Settings(auto_confirm_pray_start_before_end=False))
+    assert sessions == []
+    assert reviews[0].review_type == ReviewType.MISSING_START

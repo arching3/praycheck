@@ -171,3 +171,15 @@ def test_yo_variants_are_medium_candidates(text, cand, rule):
 @pytest.mark.parametrize("text", ["끝났어요", "회의 마쳤어요?", "기도 끝났어요?", "다들 끝나고 뭐해요", "봉사 끝나고 올게요.."])
 def test_yo_rules_do_not_add_false_positives(text):
     assert classify(text).event_type == EventType.OTHER
+
+
+@pytest.mark.parametrize("text", ["기도합니다", "기도 합니다!", "기도합니다~"])
+def test_pray_bare_is_medium_start_candidate(text):
+    ev = cls(text)
+    assert ev.event_type == EventType.AMBIGUOUS and ev.candidate == EventType.START
+    assert ev.confidence == Confidence.MEDIUM and ev.matched_rule == "start_pray_bare"
+
+
+@pytest.mark.parametrize("text", ["저도 기도합니다", "함께 기도합니다", "기도합니다?", "위해 기도합니다"])
+def test_pray_with_other_words_is_not_pray_bare(text):
+    assert cls(text).matched_rule != "start_pray_bare"

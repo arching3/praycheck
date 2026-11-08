@@ -48,6 +48,9 @@ BARE_START = ("bare_start", re.compile(r"^(시작합니다|시작하겠습니다
 LOOSE_START = ("loose_start", re.compile(r"기도(합니다|할게요|할께요|해요|하겠습니다)$"))
 LOOSE_END = ("loose_end", re.compile(r"기도(했어요|했습니다|했어용)$"))
 LOOSE_MAX_LEN = 15
+# 단독 "기도합니다": 시작 인증으로 자주 쓰지만 기도 요청에 대한 답일 수도 있다 → MEDIUM 후보.
+# matcher가 같은 사람의 종료가 뒤따를 때만 시작으로 자동 확정한다(그 외에는 검토).
+PRAY_START = ("start_pray_bare", re.compile(r"^기도(합니다|합니다요)$"))
 
 # 일상 대화·요청·응답을 나타내는 단서 → 인증으로 보지 않음
 EXCLUDE = re.compile(
@@ -150,6 +153,10 @@ def classify_line(line: str, settings: Settings) -> LineResult | None:
     name, rx = BARE_START
     if rx.match(compact):
         conf = Confidence.MEDIUM if settings.auto_confirm_bare_start else Confidence.LOW
+        return LineResult(EventType.START, conf, ClassificationSource.CONTEXT, name, norm)
+    name, rx = PRAY_START
+    if rx.match(compact):
+        conf = Confidence.LOW if typos else Confidence.MEDIUM
         return LineResult(EventType.START, conf, ClassificationSource.CONTEXT, name, norm)
     if len(compact) <= LOOSE_MAX_LEN:
         for (name, rx), et in ((LOOSE_START, EventType.START), (LOOSE_END, EventType.END)):

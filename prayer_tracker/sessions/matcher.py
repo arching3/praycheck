@@ -23,9 +23,27 @@ def _can_auto_confirm(ev: Event, expect: EventType, settings: Settings) -> bool:
         return settings.auto_confirm_bare_end_in_session
     if ev.matched_rule == "bare_start":
         return settings.auto_confirm_bare_start
+    if ev.matched_rule == "start_pray_bare":
+        return False   # 뒤따르는 종료를 보고 match_member에서 판단한다(_end_follows)
     if ev.matched_rule.startswith(("start_suffix", "end_suffix")):
         return settings.auto_confirm_suffix_in_context
     return settings.auto_confirm_typo_in_context
+
+
+def _is_end_like(ev: Event) -> bool:
+    return ev.event_type == EventType.END or (
+        ev.event_type == EventType.AMBIGUOUS and ev.candidate == EventType.END
+        and ev.confidence == Confidence.MEDIUM)
+
+
+def _end_follows(items: list[tuple[Message, Event]], i: int, linked: set[str], max_gap: timedelta) -> bool:
+    """i번째 이후 같은 사람의 다음 인증 관련 메시지가 max_gap 안의 종료(확정 또는 MEDIUM 후보)인가."""
+    t0 = items[i][0].sent_at
+    for m, e in items[i + 1:]:
+        if m.id in linked or e.event_type == EventType.OTHER:
+            continue
+        return _is_end_like(e) and t0 < m.sent_at <= t0 + max_gap
+    return False
 
 
 def match_member(
@@ -77,7 +95,7 @@ def match_member(
         updated[ev.message_id] = new
         return new
 
-    for msg, ev in items:
+    for idx, (msg, ev) in enumerate(items):
         if msg.id in linked or ev.event_type == EventType.OTHER:
             continue
         t = msg.sent_at
@@ -89,6 +107,10 @@ def match_member(
         restart = "restart" in ev.matched_rule
         is_start = ev.event_type == EventType.START or (
             (open_s is None or restart) and _can_auto_confirm(ev, EventType.START, settings))
+        if (not is_start and open_s is None and ev.matched_rule == "start_pray_bare"
+                and ev.event_type == EventType.AMBIGUOUS and ev.confidence == Confidence.MEDIUM
+                and settings.auto_confirm_pray_start_before_end and _end_follows(items, idx, linked, max_gap)):
+            is_start = True
         is_end = ev.event_type == EventType.END or (open_s is not None and _can_auto_confirm(ev, EventType.END, settings))
 
         if is_start:

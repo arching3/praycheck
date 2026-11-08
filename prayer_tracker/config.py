@@ -18,6 +18,8 @@ class Settings(BaseModel):
     auto_confirm_bare_end_in_session: bool = True
     # 단독 "시작합니다"는 기본적으로 검토 대상
     auto_confirm_bare_start: bool = False
+    # 단독 "기도합니다"를 같은 사람의 종료 인증이 뒤따를 때(최대 세션 시간 안) 시작으로 자동 확정
+    auto_confirm_pray_start_before_end: bool = True
     # 검증된 오타/구어체(MEDIUM)를 정상 문맥에서 자동 확정
     auto_confirm_typo_in_context: bool = True
     # 문장 끝에 붙은 명시적 인증("...가지고 기도 시작합니다")을 정상 문맥에서 자동 확정

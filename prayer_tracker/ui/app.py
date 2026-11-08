@@ -728,6 +728,8 @@ def page_settings(svc):
     mx = st.number_input("세션 최대 길이(시간)", 0.5, 24.0, float(s.max_session_hours), step=0.5)
     a1 = st.checkbox("진행 중 세션이 있을 때 단독 '마칩니다' 자동 확정", value=s.auto_confirm_bare_end_in_session)
     a2 = st.checkbox("단독 '시작합니다' 자동 확정", value=s.auto_confirm_bare_start)
+    a5 = st.checkbox("단독 '기도합니다' 뒤에 같은 사람의 '마칩니다'가 오면 시작으로 자동 확정",
+                     value=s.auto_confirm_pray_start_before_end)
     a3 = st.checkbox("검증된 오타/구어체를 정상 문맥에서 자동 확정", value=s.auto_confirm_typo_in_context)
     a4 = st.checkbox("문장 끝에 붙은 인증('…가지고 기도 시작합니다')을 정상 문맥에서 자동 확정",
                      value=s.auto_confirm_suffix_in_context)
@@ -735,7 +737,7 @@ def page_settings(svc):
     if st.button("설정 저장", type="primary"):
         svc.save_settings(s.model_copy(update=dict(
             tracking_start_date=tsd, grace_hour=int(grace), max_session_hours=float(mx),
-            auto_confirm_bare_end_in_session=a1, auto_confirm_bare_start=a2,
+            auto_confirm_bare_end_in_session=a1, auto_confirm_bare_start=a2, auto_confirm_pray_start_before_end=a5,
             auto_confirm_typo_in_context=a3, auto_confirm_suffix_in_context=a4, fuzzy_threshold=int(fz))))
         st.success("저장하고 다시 계산했습니다.")
 
