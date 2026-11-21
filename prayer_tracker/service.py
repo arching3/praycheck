@@ -62,6 +62,20 @@ class PrayerService:
         self.recompute()
 
     # ---------------------------------------------------------------- 업로드
+    def get_nav_order(self) -> list[str]:
+        """사이드바 메뉴 순서(화면 설정이라 판정과 무관, 변경 이력에도 남기지 않는다)."""
+        row = self.conn.execute("SELECT value FROM setting WHERE key='nav_order'").fetchone()
+        try:
+            v = json.loads(row["value"]) if row else []
+        except ValueError:
+            return []
+        return [str(x) for x in v] if isinstance(v, list) else []
+
+    def save_nav_order(self, order: list[str]) -> None:
+        self.conn.execute("INSERT OR REPLACE INTO setting(key,value) VALUES('nav_order',?)",
+                          (json.dumps([str(x) for x in order]),))
+        self.conn.commit()
+
     def storage_cutoff(self, settings: Settings | None = None) -> datetime | None:
         """이 시각 이전의 메시지는 저장하지 않는다: 추적 시작일 하루 전 00:00 (전날 문맥 확인용)."""
         tsd = (settings or self.get_settings()).tracking_start_date

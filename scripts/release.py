@@ -34,7 +34,8 @@ SHIPPED_FILES = ["run.bat", "requirements-runtime.txt", "tools/launcher.ps1", "t
 
 def fingerprint() -> dict[str, str]:
     files = [ROOT / f for f in SHIPPED_FILES]
-    files += [p for p in (ROOT / "prayer_tracker").rglob("*.py") if "__pycache__" not in p.parts]
+    files += [p for p in (ROOT / "prayer_tracker").rglob("*") if p.is_file() and p.suffix in (".py", ".html")
+              and "__pycache__" not in p.parts]
     return {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(files) if p.exists()}
 

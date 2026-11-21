@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 사이드바 메뉴: 누르면 이동, 누른 채 끌면 순서 바꾸기(놓는 즉시 저장).
+     외부 라이브러리 없이 Streamlit 컴포넌트 메시지 규약(postMessage)만 쓴다. 마우스·터치 모두 pointer 이벤트로 처리.
+     돌려주는 값: {"action": "nav", "key": ..., "n": 순번} 또는 {"action": "order", "order": [...], "n": 순번} -->
+<style>
+  :root { --bg:#fff; --fg:#31333f; --accent:#ff4b4b; --line:rgba(49,51,63,.2); --hover:#fafafa; }
+  html, body { margin:0; padding:0; background:transparent;
+               font-family:"Source Sans Pro","Source Sans 3","Malgun Gothic",sans-serif; }
+  ul { list-style:none; margin:0; padding:1px 0; }
+  /* Streamlit 버튼과 같은 모양·크기(높이 3rem, 글자 1.15rem, 현재 페이지는 강조색) */
+  li { position:relative; display:flex; align-items:center; box-sizing:border-box; min-height:3rem;
+       margin:0 0 .4rem; padding:.4rem 1rem; background:var(--bg); color:var(--fg);
+       border:1px solid var(--line); border-radius:.5rem; font-size:1.15rem; font-weight:500;
+       cursor:pointer; user-select:none; touch-action:none; outline:none; }
+  li:hover, li:focus-visible { border-color:var(--accent); color:var(--accent); }
+  li.current { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
+  li .grip { position:absolute; right:.7rem; opacity:0; font-size:1rem; color:inherit; transition:opacity .15s; }
+  li:hover .grip { opacity:.45; }
+  li.dragging { cursor:grabbing; box-shadow:0 3px 10px rgba(0,0,0,.2); z-index:2; }
+  ul.sorting li:not(.dragging) { transition:transform .05s; }
+</style>
+</head>
+<body>
+<ul id="list" role="menu"></ul>
+<script>
+(function () {
+  const list = document.getElementById("list");
+  const MOVE_PX = 6;            // 이만큼 움직여야 끌기로 본다(그보다 작으면 클릭)
+  let sig = "", keys = [], n = Date.now();
+  let press = null;             // {li, x, y, id, dragging}
+
+  function send(type, data) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
+  }
+  function emit(value) { value.n = ++n; send("streamlit:setComponentValue", { value: value, dataType: "json" }); }
+
+  // 높이: 처음 그릴 때와 크기가 바뀔 때마다 알린다
+  let lastH = -1;
+  function setHeight() {
+    const h = Math.ceil(list.getBoundingClientRect().height) + 4;
+    if (h !== lastH && h > 4) { lastH = h; send("streamlit:setFrameHeight", { height: h }); }
+  }
+  window.addEventListener("resize", setHeight);
+  if (window.ResizeObserver) new ResizeObserver(setHeight).observe(list);
+
+  function applyTheme(t) {
+    if (!t) return;
+    const r = document.documentElement.style;
+    if (t.backgroundColor) r.setProperty("--bg", t.backgroundColor);
+    if (t.textColor) r.setProperty("--fg", t.textColor);
+    if (t.primaryColor) r.setProperty("--accent", t.primaryColor);
+  }
+
+  function render(items, current) {
+    list.innerHTML = "";
+    for (const it of items) {
+      const li = document.createElement("li");
+      li.dataset.key = it.key;
+      li.tabIndex = 0;
+      li.setAttribute("role", "menuitem");
+      li.title = "누르면 이동, 누른 채 위아래로 끌면 순서 바꾸기";
+      if (it.key === current) { li.classList.add("current"); li.setAttribute("aria-current", "page"); }
+      const t = document.createElement("span"); t.textContent = it.label;
+      const g = document.createElement("span"); g.className = "grip"; g.textContent = "⠿";
+      li.append(t, g);
+      list.appendChild(li);
+    }
+    keys = items.map(i => i.key);
+    setHeight();
+  }
+
+  list.addEventListener("pointerdown", e => {
+    const li = e.target.closest("li");
+    if (!li || e.button > 0) return;
+    press = { li: li, x: e.clientX, y: e.clientY, id: e.pointerId, dragging: false };
+    li.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  list.addEventListener("pointermove", e => {
+    if (!press) return;
+    if (!press.dragging) {
+      if (Math.abs(e.clientY - press.y) < MOVE_PX && Math.abs(e.clientX - press.x) < MOVE_PX) return;
+      press.dragging = true;
+      press.li.classList.add("dragging");
+      list.classList.add("sorting");
+    }
+    const dragging = press.li;
+    for (const li of list.children) {
+      if (li === dragging) continue;
+      const r = li.getBoundingClientRect();
+      if (e.clientY >= r.top && e.clientY <= r.bottom) {
+        const ref = e.clientY < r.top + r.height / 2 ? li : li.nextSibling;
+        if (ref !== dragging && dragging.nextSibling !== ref) list.insertBefore(dragging, ref);
+        break;
+      }
+    }
+  });
+  function finish(cancel) {
+    if (!press) return;
+    const p = press; press = null;
+    p.li.classList.remove("dragging");
+    list.classList.remove("sorting");
+    if (p.dragging) {
+      const order = Array.from(list.children).map(li => li.dataset.key);
+      if (order.join("|") !== keys.join("|")) { keys = order; emit({ action: "order", order: order }); }
+    } else if (!cancel) {
+      emit({ action: "nav", key: p.li.dataset.key });
+    }
+  }
+  list.addEventListener("pointerup", () => finish(false));
+  list.addEventListener("pointercancel", () => finish(true));
+  list.addEventListener("keydown", e => {
+    const li = e.target.closest("li");
+    if (li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); emit({ action: "nav", key: li.dataset.key }); }
+  });
+
+  window.addEventListener("message", e => {
+    const d = e.data;
+    if (!d || d.type !== "streamlit:render") return;
+    if (press && press.dragging) return;   // 끌고 있는 중에는 다시 그리지 않는다
+    applyTheme(d.theme);
+    const a = d.args || {};
+    const items = a.items || [];
+    const s = JSON.stringify([items, a.current]);
+    if (s !== sig || !list.children.length) { sig = s; render(items, a.current); }
+    else setHeight();
+  });
+  send("streamlit:componentReady", { apiVersion: 1 });
+})();
+</script>
+</body>
+</html>

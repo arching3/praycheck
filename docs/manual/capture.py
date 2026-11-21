@@ -66,7 +66,8 @@ def main(work: Path) -> None:
             def nav(label):
                 # "설정"이 "참여자 설정"에 걸리지 않도록 메뉴 이름 전체로 찾는다("검토 (2)"처럼 건수가 붙는 메뉴 포함)
                 pattern = re.compile(rf"^{re.escape(label)}( \(\d+\))?$")
-                page.locator('[data-testid="stSidebar"]').get_by_text(pattern).first.click()
+                # 메뉴는 컴포넌트(iframe) 안에 있다
+                page.frame_locator('iframe[title*="nav_sort"]').get_by_text(pattern).first.click()
                 idle()
 
             def open_app():

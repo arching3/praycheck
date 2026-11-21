@@ -18,6 +18,7 @@ from prayer_tracker import __version__, updater  # noqa: E402
 from prayer_tracker.models import DayStatus, EventType, ReviewType  # noqa: E402
 from prayer_tracker.reports import export, pdf, summary  # noqa: E402
 from prayer_tracker.service import DEFAULT_DB, PrayerService  # noqa: E402
+from prayer_tracker.ui.nav_sort import interpret, merge_order, nav_menu_component  # noqa: E402
 from prayer_tracker.ui.dashboard_widgets import (  # noqa: E402
     WEEKDAYS, month_picker, person_calendar, timeline,
 )
@@ -84,12 +85,8 @@ FEEDBACK_CSS = """<style>
 .pc-done{border:1px solid #2e9d5b;border-left:6px solid #2e9d5b;border-radius:6px;padding:8px 12px;
          margin:4px 0 8px}
 .pc-done-title{color:#2e9d5b;font-weight:700}
-/* 사이드바 메뉴 버튼: 큰 글자, 넉넉한 높이, 왼쪽 정렬 */
-.st-key-pc_nav{gap:.4rem}
-.st-key-pc_nav button{min-height:3rem;justify-content:flex-start;padding:.4rem 1rem}
-.st-key-pc_nav button > div{justify-content:flex-start}
-.st-key-pc_nav button p{font-size:1.15rem;font-weight:500;text-align:left}
-.st-key-pc_nav button[kind="primary"] p{font-weight:700}
+/* 사이드바 메뉴(컴포넌트 iframe, 모양은 nav_sort/index.html) */
+.st-key-pc_nav iframe{display:block}
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p{font-size:.95rem}
 </style>"""
 ET_KO = {EventType.START: "시작(START)", EventType.END: "종료(END)", EventType.OTHER: "인증 아님(OTHER)"}
@@ -928,6 +925,27 @@ def update_sidebar() -> None:
 
 
 # ------------------------------------------------------------------ 메인
+def nav_menu(svc, pages: dict, key: str) -> None:
+    """사이드바 메뉴: 누르면 이동, 누른 채 위아래로 끌면 순서 바꾸기(놓는 즉시 DB 설정 nav_order에 저장).
+    라벨(검토 건수)이 바뀌어도 key는 그대로다."""
+    order = merge_order(list(pages), svc.get_nav_order())
+    with st.sidebar.container(key="pc_nav"):
+        value = nav_menu_component([(k, pages[k][0]) for k in order], key, key="pc_nav_menu")
+    go_to, new_order = interpret(value, order, st.session_state.get("nav_last_n"))
+    if go_to or new_order:
+        st.session_state["nav_last_n"] = value["n"]   # 같은 동작을 다시 처리하지 않도록
+        if new_order:
+            svc.save_nav_order(new_order)
+        if go_to:
+            st.session_state["page"] = go_to
+        st.rerun()
+    st.sidebar.caption("메뉴를 누른 채 위아래로 끌면 순서를 바꿀 수 있습니다.")
+    if order != list(pages) and st.sidebar.button("메뉴 기본 순서로", key="nav_sort_reset", type="tertiary",
+                                                  icon=":material/restart_alt:"):
+        svc.save_nav_order([])
+        st.rerun()
+
+
 def main():
     svc = get_service()
     n = len(open_reviews(svc))
@@ -947,15 +965,10 @@ def main():
     st.sidebar.title("기도 인증 현황")
     st.sidebar.caption(f"버전 {__version__}")
     update_sidebar()
-    # 메뉴: 글자가 크고 누르기 쉬운 버튼(현재 페이지는 강조). 라벨(검토 건수)이 바뀌어도 key는 그대로다.
-    # on_click은 화면을 다시 그리기 전에 실행되므로, 누른 즉시 강조 표시도 맞게 나온다.
     cur = st.session_state.get("page", "dashboard")
     key = cur if cur in pages else "dashboard"
     st.session_state["page"] = key
-    nav = st.sidebar.container(key="pc_nav")
-    for k, (label, _) in pages.items():
-        nav.button(label, key=f"nav|{k}", width="stretch", type="primary" if k == key else "secondary",
-                   on_click=st.session_state.__setitem__, args=("page", k))
+    nav_menu(svc, pages, key)
     if st.session_state.get("last_page") != key:
         # 페이지를 옮기면 '처리 완료' 카드와 되돌리기 기록을 정리한다
         st.session_state["last_page"] = key
